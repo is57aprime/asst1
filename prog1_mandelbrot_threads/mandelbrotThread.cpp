@@ -35,6 +35,22 @@ void workerThreadStart(WorkerArgs * const args) {
     // program that uses two threads, thread 0 could compute the top
     // half of the image and thread 1 could compute the bottom half.
 
+//    float x0_cropped = args->x0;
+//    float x1_cropped = args->x1;
+//    float delta = (args->y1-args->y0)/args->numThreads;
+    float delta      = args->height/args->numThreads;
+    float stepHeight = delta*args->threadId;
+
+//    float y0_cropped = args->y0 + delta*args->threadId;
+//    float y1_cropped = y0_cropped + delta;
+
+//    int width_new = args->width;
+//    int height_new = args->height/args->numThreads;
+
+//    float DeltaRows = args->
+
+    mandelbrotSerial(args->x0, args->y0, args->x1, args->y1, args->width, args->height,stepHeight,delta,args->maxIterations,args->output);
+
     printf("Hello world from thread %d\n", args->threadId);
 }
 
