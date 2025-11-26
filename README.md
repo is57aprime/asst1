@@ -9,3 +9,4 @@ On a Mac M1
 * (5.57x speedup from 30 threads)
 
 NumThreads has to be a factor of height (1200)
+![Uploading image.png…]()
