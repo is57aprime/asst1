@@ -249,7 +249,96 @@ void clampedExpVector(float* values, int* exponents, float* output, int N) {
   // Your solution should work for any value of
   // N and VECTOR_WIDTH, not just when VECTOR_WIDTH divides N
   //
-  
+  __cs149_vec_float base;
+  __cs149_vec_int exp;
+  __cs149_vec_float result;
+  __cs149_vec_float zeroFloat = _cs149_vset_float(0);
+  __cs149_vec_float oneFloat  = _cs149_vset_float(1);
+  __cs149_vec_float vecMax = _cs149_vset_float(9.999999);
+  __cs149_vec_int zeroInt   = _cs149_vset_int(0);
+  __cs149_vec_int oneInt   = _cs149_vset_int(1);
+
+  __cs149_mask maskAll, maskModulo, maskAllActual,maskExpNz, maskBaseZero, maskBaseOne, maskExpPositive, maskExpNegative, maskExpZero, maskRemainingExp, maskBaseNonzeroNonOne, maskBaseZeroOrOne, maskBaseExceed, maskBaseNotExceed;
+  maskAll        = _cs149_init_ones();
+  maskModulo =   _cs149_mask_not(maskAll);
+  maskAllActual =   _cs149_mask_not(maskAll);
+  maskExpNz =   _cs149_mask_not(maskAll);
+  maskBaseZero =   _cs149_mask_not(maskAll);
+  maskBaseOne =   _cs149_mask_not(maskAll);
+  maskExpPositive =   _cs149_mask_not(maskAll);
+  maskExpNegative =   _cs149_mask_not(maskAll);
+  maskExpZero =   _cs149_mask_not(maskAll);
+  maskRemainingExp =   _cs149_mask_not(maskAll);
+  maskBaseNonzeroNonOne =   _cs149_mask_not(maskAll);
+  maskBaseZeroOrOne =   _cs149_mask_not(maskAll);
+  maskBaseExceed =   _cs149_mask_not(maskAll);
+  maskBaseNotExceed =   _cs149_mask_not(maskAll);
+  int offset = (N%VECTOR_WIDTH == 0) ? 0 : VECTOR_WIDTH;
+
+  for (int i=0; i<(N-N%VECTOR_WIDTH+offset); i+=VECTOR_WIDTH) {
+    int remainingExp;
+    maskModulo     = _cs149_init_ones(N%VECTOR_WIDTH);
+
+    maskAllActual  = (i<(N-N%VECTOR_WIDTH) ? maskAll : maskModulo);
+//    maskAllActual  = maskAll;
+
+    _cs149_vset_float(result,1,maskAll);
+
+    _cs149_vload_float(base, values+i,    maskAllActual);               // x = values[i];
+    _cs149_vload_int  (exp,  exponents+i, maskAllActual);               // x = values[i];
+
+    _cs149_vgt_int(maskExpPositive, exp, zeroInt, maskAllActual); 
+    _cs149_veq_int(maskExpZero, exp, zeroInt, maskAllActual);
+
+    printf("%d mask exp positive %d\n", i, _cs149_cntbits(maskExpPositive));
+    _cs149_vlt_int(maskExpNegative, exp, zeroInt, maskAllActual);
+
+    _cs149_veq_float(maskBaseZero, base, zeroFloat, maskAllActual);
+    maskBaseZero = _cs149_mask_and(maskBaseZero, maskAllActual);
+    printf("%d mask base zero %d\n", i, _cs149_cntbits(maskBaseZero));
+
+    _cs149_veq_float(maskBaseOne , base, oneFloat , maskAllActual);
+    maskBaseOne = _cs149_mask_and(maskBaseOne, maskAllActual);
+
+    printf("%d mask base one %d\n", i, _cs149_cntbits(maskBaseOne));
+
+    _cs149_vset_float(result, 1, maskExpZero);
+    _cs149_vset_float(result, 0, maskBaseZero);
+
+    maskBaseZeroOrOne = _cs149_mask_or(maskBaseOne, maskBaseZero);
+    maskBaseNonzeroNonOne = _cs149_mask_not(maskBaseZeroOrOne);
+
+    // TODO : I think it's all positive exponents only. assume positive and see if tests break
+    maskRemainingExp = _cs149_mask_and(maskBaseNonzeroNonOne, maskExpPositive);
+//    remainingExp = _cs149_cntbits(maskExpNz);
+    remainingExp = _cs149_cntbits(maskRemainingExp);
+    
+    maskExpPositive = _cs149_mask_and(maskExpPositive, maskRemainingExp);
+    while (remainingExp != 0) {
+      printf ("i %d remainingExp %d\n", i, remainingExp);
+      // do mult
+//      printf("Error: Workload size is set to ");
+      _cs149_vmult_float(result, result, base, maskRemainingExp);
+      // sub exp by 1
+      _cs149_vsub_int(exp, exp, oneInt, maskRemainingExp);
+
+      _cs149_vgt_int(maskExpPositive, exp, zeroInt, maskRemainingExp); 
+//      printf("exp positive %d\n", _cs149_cntbits(maskExpPositive));
+      _cs149_vgt_float(maskBaseExceed, result, vecMax, maskRemainingExp);
+      maskBaseExceed = _cs149_mask_and(maskBaseExceed,maskRemainingExp);
+//      printf("base exeed %d\n", _cs149_cntbits(maskBaseExceed));
+
+//      _cs149_vdiv_float(result, result, base, maskBaseExceed);
+      _cs149_vset_float(result,9.999999,maskBaseExceed);
+      maskBaseNotExceed = _cs149_mask_not(maskBaseExceed);
+
+      maskRemainingExp = _cs149_mask_and(maskRemainingExp, maskExpPositive);
+      maskRemainingExp = _cs149_mask_and(maskRemainingExp, maskBaseNotExceed);
+      remainingExp = _cs149_cntbits(maskRemainingExp);
+//      printf ("new remaining exp %d\n",remainingExp);
+    }
+  _cs149_vstore_float(output+i, result, maskAllActual);
+  }
 }
 
 // returns the sum of all elements in values
@@ -266,15 +355,37 @@ float arraySumSerial(float* values, int N) {
 // You can assume N is a multiple of VECTOR_WIDTH
 // You can assume VECTOR_WIDTH is a power of 2
 float arraySumVector(float* values, int N) {
-  
-  //
-  // CS149 STUDENTS TODO: Implement your vectorized version of arraySumSerial here
-  //
-  
+
+  if (N == 1) {return *values;}
+  __cs149_mask maskAll, maskNeg, maskModulo, maskAllActual, maskCurrentSz, maskCurrentSzNeg;
+  __cs149_vec_float arrayCropped;
+
+  maskAll        = _cs149_init_ones();
+  maskModulo     = _cs149_init_ones(N%VECTOR_WIDTH);
+  int M = N-N%VECTOR_WIDTH+VECTOR_WIDTH;
   for (int i=0; i<N; i+=VECTOR_WIDTH) {
+    maskAllActual  = (i<(N-N%VECTOR_WIDTH) ? maskAll : maskModulo);
+    maskNeg = _cs149_mask_not(maskAllActual);
 
+    _cs149_vload_float(arrayCropped, values+i, maskAll);               // x = values[i];
+    _cs149_vset_float(arrayCropped, 0, maskNeg);
+
+    int currentSize = VECTOR_WIDTH;
+
+    maskCurrentSz = _cs149_init_ones(currentSize);
+    maskCurrentSzNeg = _cs149_mask_not(maskCurrentSz);
+    while (currentSize > 1) {
+      _cs149_hadd_float(arrayCropped, arrayCropped);      
+      _cs149_interleave_float(arrayCropped, arrayCropped);
+      currentSize = currentSize/2;
+      maskCurrentSz    = _cs149_init_ones(currentSize);
+      maskCurrentSzNeg = _cs149_mask_not(maskCurrentSz);
+      _cs149_vset_float(arrayCropped, 0, maskCurrentSzNeg);
+    }
+    _cs149_vstore_float(values+(i/VECTOR_WIDTH),arrayCropped,maskAll);
   }
-
+  if (M==VECTOR_WIDTH) {return *values;}
+  else {return arraySumVector(values, M/VECTOR_WIDTH);}
   return 0.0;
 }
 
