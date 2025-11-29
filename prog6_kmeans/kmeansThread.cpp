@@ -58,6 +58,7 @@ double dist(double *x, double *y, int nDim) {
   for (int i = 0; i < nDim; i++) {
     accum += pow((x[i] - y[i]), 2);
   }
+
   return sqrt(accum);
 }
 
@@ -203,15 +204,63 @@ void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignment
       prevCost[k] = currCost[k];
     }
 
+    static constexpr int NUMTHREADS = 10;
+    int kDelta = K/NUMTHREADS;
+
+    WorkerArgs argzz[NUMTHREADS];
+    std::thread workers[NUMTHREADS];
+
+    for (int i = 0; i < NUMTHREADS; i++) {
     // Setup args struct
-    args.start = 0;
-    args.end = K;
+      argzz[i] = args;
+      argzz[i].start =     i*kDelta    ;
+      argzz[i].end   = (i+1)*kDelta - 1;
 
-    computeAssignments(&args);
-    computeCentroids(&args);
-    computeCost(&args);
+      if (i == NUMTHREADS - 1) {argzz[i].end += 1;}
+    }
 
+       for (int i=0; i<NUMTHREADS; i++) {
+          workers[i] = std::thread(computeAssignments, &argzz[i]);
+        }
+
+        for (int i=0; i<NUMTHREADS; i++) {
+          workers[i].join();
+        }
+
+        for (int i=0; i<NUMTHREADS; i++) {
+          workers[i] = std::thread(computeCentroids, &argzz[i]);
+        }
+
+        for (int i=0; i<NUMTHREADS; i++) {
+          workers[i].join();
+        }
+
+        for (int i=0; i<NUMTHREADS; i++) {
+          workers[i] = std::thread(computeCost, &argzz[i]);
+        }
+
+        for (int i=0; i<NUMTHREADS; i++) {
+          workers[i].join();
+        }
+
+//      double t = CycleTimer::currentSeconds();
+//      computeAssignments(&args);
+ 
+//      t = CycleTimer::currentSeconds() - t;
+//      printf("[assignments]:\t\t[%.7f] ms\n", t);
+ //     t = CycleTimer::currentSeconds();
+
+//      computeCentroids(&args);
+
+  //    t = CycleTimer::currentSeconds() - t;
+//      printf("[centroids]:\t\t[%.7f] ms\n", t);
+
+//      t = CycleTimer::currentSeconds();
+//      computeCost(&args);
+//      t = CycleTimer::currentSeconds() - t;
+//      printf("[cost]:\t\t[%.7f] ms\n", t);
     iter++;
+    printf("%d \n", iter);
   }
 
   delete[] currCost;
