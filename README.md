@@ -10,3 +10,8 @@ On a Mac M1
 
 NumThreads has to be a factor of height (1200)
 ![Uploading image.png…]()
+
+# Problem 6
+* Time measurements conclude that setting assignments >> everything else
+* Did not have access to the data file, so used a claude generated script (generate_data_v4.py) to generate a dummy file
+* Speedup: 150ms on multithreaded code (5 threads because the dummy file had K=5) and 700ms on regular 
