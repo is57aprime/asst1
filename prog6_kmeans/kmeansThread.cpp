@@ -18,6 +18,7 @@ typedef struct {
   int *clusterAssignments;
   double *currCost;
   int M, N, K;
+  double *kDist;
 } WorkerArgs;
 
 
@@ -79,14 +80,9 @@ void computeAssignments(WorkerArgs *const args) {
     for (int m = 0; m < args->M; m++) {
       double d = dist(&args->data[m * args->N],
                       &args->clusterCentroids[k * args->N], args->N);
-      if (d < minDist[m]) {
-        minDist[m] = d;
-        args->clusterAssignments[m] = k;
-      }
-    }
+      args->kDist[k*m] = d;
+   }
   }
-
-  delete[] minDist;
 }
 
 /**
@@ -181,6 +177,7 @@ void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignment
 
   // The WorkerArgs array is used to pass inputs to and return output from
   // functions.
+  double* kDist = new double[M*N];
   WorkerArgs args;
   args.data = data;
   args.clusterCentroids = clusterCentroids;
@@ -189,6 +186,7 @@ void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignment
   args.M = M;
   args.N = N;
   args.K = K;
+  args.kDist = kDist;
 
   // Initialize arrays to track cost
   for (int k = 0; k < K; k++) {
@@ -196,6 +194,7 @@ void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignment
     currCost[k] = 0.0;
   }
 
+  double minDist;
   /* Main K-Means Algorithm Loop */
   int iter = 0;
   while (!stoppingConditionMet(prevCost, currCost, epsilon, K)) {
@@ -204,7 +203,7 @@ void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignment
       prevCost[k] = currCost[k];
     }
 
-    static constexpr int NUMTHREADS = 10;
+    static constexpr int NUMTHREADS = 5;
     int kDelta = K/NUMTHREADS;
 
     WorkerArgs argzz[NUMTHREADS];
@@ -213,10 +212,9 @@ void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignment
     for (int i = 0; i < NUMTHREADS; i++) {
     // Setup args struct
       argzz[i] = args;
-      argzz[i].start =     i*kDelta    ;
-      argzz[i].end   = (i+1)*kDelta - 1;
+      argzz[i].start =     i*kDelta ;
+      argzz[i].end   = (i+1)*kDelta ;
 
-      if (i == NUMTHREADS - 1) {argzz[i].end += 1;}
     }
 
        for (int i=0; i<NUMTHREADS; i++) {
@@ -227,22 +225,16 @@ void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignment
           workers[i].join();
         }
 
-        for (int i=0; i<NUMTHREADS; i++) {
-          workers[i] = std::thread(computeCentroids, &argzz[i]);
-        }
 
-        for (int i=0; i<NUMTHREADS; i++) {
-          workers[i].join();
+        for (int m=0; m<M; m++) {
+        minDist = 1e30;
+          for (int k=0; k<K; k++) {
+            if (argzz->kDist[m*k] < minDist) {
+              argzz->clusterAssignments[m] = k;
+              minDist = argzz->kDist[m*k];
+            }
+          }
         }
-
-        for (int i=0; i<NUMTHREADS; i++) {
-          workers[i] = std::thread(computeCost, &argzz[i]);
-        }
-
-        for (int i=0; i<NUMTHREADS; i++) {
-          workers[i].join();
-        }
-
 //      double t = CycleTimer::currentSeconds();
 //      computeAssignments(&args);
  
@@ -250,13 +242,13 @@ void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignment
 //      printf("[assignments]:\t\t[%.7f] ms\n", t);
  //     t = CycleTimer::currentSeconds();
 
-//      computeCentroids(&args);
+      computeCentroids(&args);
 
   //    t = CycleTimer::currentSeconds() - t;
 //      printf("[centroids]:\t\t[%.7f] ms\n", t);
 
 //      t = CycleTimer::currentSeconds();
-//      computeCost(&args);
+      computeCost(&args);
 //      t = CycleTimer::currentSeconds() - t;
 //      printf("[cost]:\t\t[%.7f] ms\n", t);
     iter++;
@@ -265,4 +257,5 @@ void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignment
 
   delete[] currCost;
   delete[] prevCost;
+  delete[] kDist;
 }
